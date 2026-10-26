@@ -46,6 +46,12 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .btn:hover{border-color:var(--muted)}
 .btn.primary{background:var(--oxide);border-color:var(--oxide-hi);color:var(--on-accent);font-weight:600;letter-spacing:.1em;text-transform:uppercase}
 .btn[aria-expanded="true"]{border-color:var(--amber);color:var(--amber)}
+.btn.small{padding:6px 10px;font-size:13px;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+.btn.small[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+.ref-field{padding-left:18px;border-left:1px solid var(--line)}
+.ref-row{display:flex;align-items:center;gap:6px}
+#refIn{color:var(--amber)}
+@media (max-width:760px){.ref-field{padding-left:0;border-left:0}}
 .share{display:flex;flex-direction:column;gap:10px;margin:4px 16px 18px;padding:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px}
 .share-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
 .share-what{font-size:14px;color:var(--muted)}
@@ -163,6 +169,13 @@ main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
       <div class="field" id="dateField" hidden>
         <label class="lbl" for="dateIn">Date</label>
         <input class="inp" id="dateIn" type="date">
+      </div>
+      <div class="field ref-field">
+        <label class="lbl" for="refIn">Measure from</label>
+        <div class="ref-row">
+          <input class="inp" id="refIn" type="date">
+          <button class="btn small" type="button" id="refToday" aria-pressed="true">Today</button>
+        </div>
       </div>
       <button class="btn primary" type="submit" id="go">Mirror it</button>
       <p class="hint" id="hint">Year mode uses today's month and day in that year.</p>
@@ -538,7 +551,8 @@ function setMode(m){
   $('#yearField').hidden = m !== 'year';
   $('#dateField').hidden = m !== 'date';
   $('#hint').className = 'hint';
-  $('#hint').textContent = m === 'year' ? "Year mode uses today's month and day in that year." : 'Pick any date before today.';
+  const ref = refToday ? 'the measure-from date' : 'today';
+  $('#hint').textContent = m === 'year' ? 'Year mode uses ' + (refToday ? "the measure-from date's" : "today's") + ' month and day in that year.' : 'Pick any date before ' + ref + '.';
 }
 $('#modeYear').addEventListener('click', () => setMode('year'));
 $('#modeDate').addEventListener('click', () => setMode('date'));
@@ -609,14 +623,32 @@ function commit(k){
     const total = Math.round((t - d) / DAY), half = Math.round(total / 2);
     run(new Date(d.getTime() + half * DAY), total % 2 ? 'There are ' + total.toLocaleString('en-US') + ' days between your mirror date and today, an odd number, so the picked date is rounded to the nearest day and the mirror moved by one.' : '');
   } else {
-    if (last && +d === +last.today) return;
-    const prev = refToday;
-    refToday = +d === +todayUTC() ? null : d;
-    if (!run(last ? last.picked : d)) { refToday = prev; showLast(); }
+    setRef(d);
   }
 }
+/* Change the date everything is measured from. In year mode the picked date
+   follows the new month and day; in exact-date mode it stays put. */
+function setRef(d){
+  if (!d) { $('#refIn').value = iso(getToday()); return false; }
+  if (last && +d === +last.today) return true;
+  const prev = refToday;
+  refToday = +d === +todayUTC() ? null : d;
+  let picked = last ? last.picked : null;
+  if (mode === 'year'){ const y = parseInt($('#yearIn').value, 10); if (Number.isFinite(y)) picked = sameDayInYear(y, getToday()); }
+  if (!run(picked)) { refToday = prev; $('#refIn').value = iso(getToday()); syncRefUI(); return false; }
+  return true;
+}
+function syncRefUI(){
+  const real = !refToday;
+  $('#refIn').value = iso(getToday());
+  $('#refToday').setAttribute('aria-pressed', String(real));
+  $('#todayLbl').textContent = real ? 'Today' : 'Measured from';
+  $('#resetToday').hidden = real;
+}
 ['#roMirror', '#roPicked', '#roToday'].forEach(s => buildLcd($(s)));
-$('#resetToday').addEventListener('click', () => { refToday = null; if (last) run(last.picked); });
+$('#resetToday').addEventListener('click', () => setRef(todayUTC()));
+$('#refToday').addEventListener('click', () => setRef(todayUTC()));
+$('#refIn').addEventListener('change', () => setRef(parseISO($('#refIn').value)));
 
 /* ---- sharing ---- */
 let results = { mirror:{}, picked:{} };
@@ -682,7 +714,7 @@ function run(picked, note){
   const hint = $('#hint');
   const fail = msg => { hint.className = 'hint err'; hint.textContent = msg; showLast(); return false; };
   if (!picked) return fail(mode === 'year' ? 'Enter a four-digit year.' : 'Choose a date.');
-  if (picked >= today) return fail('Pick a date before ' + (refToday ? 'your today date' : 'today') + ' so the mirror lands in the past.');
+  if (picked >= today) return fail(refToday ? 'Pick a date before ' + fmtLong(today) + ', the measure-from date, or measure from a later date.' : 'Pick a date before today so the mirror lands in the past, or measure from a later date.');
   const { diff, mirror } = mirrorOf(picked, today);
   if (mirror.getUTCFullYear() < 1) return fail('That mirror would land before year 1. Pick something after ' + Math.ceil((today.getUTCFullYear() + 1) / 2) + '.');
   hint.className = 'hint';
@@ -690,8 +722,7 @@ function run(picked, note){
     (mirror.getUTCDate() !== picked.getUTCDate() || mirror.getUTCMonth() !== picked.getUTCMonth() ? ' Leap days shift the mirror off the calendar date.' : ''));
   last = { mirror, picked, today };
   setLcd('Mirror', mirror); setLcd('Picked', picked); setLcd('Today', today);
-  $('#todayLbl').textContent = refToday ? 'Today (changed)' : 'Today';
-  $('#resetToday').hidden = !refToday;
+  syncRefUI();
   $('#yearIn').value = picked.getUTCFullYear(); $('#dateIn').value = iso(picked);
   $('#dateIn').max = iso(new Date(today.getTime() - DAY));
   $('#yearIn').max = today.getUTCFullYear() - 1;

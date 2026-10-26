@@ -12,4 +12,4 @@ For both the picked date and the mirror date, it reads English Wikipedia live an
 
 The month, day and year of all three dates (mirror, picked, today) are editable in place. Changing the mirror moves the picked date to the halfway point; changing today recalculates from a different reference day.
 
-Single file (`index.html`), no build step. Serve it with GitHub Pages (Settings → Pages → Deploy from branch → `main` / root). A shareable link is `?date=YYYY-MM-DD` or `?year=YYYY`, plus `&today=YYYY-MM-DD` for a changed today.
+Single file (`index.html`), no build step. Serve it with GitHub Pages (Settings → Pages → Deploy from branch → `main` / root). The Share button copies a link to the exact combination on screen, or a text summary with both dates' songs, films, shows and events. A shareable link is `?date=YYYY-MM-DD` or `?year=YYYY`, plus `&today=YYYY-MM-DD` for a changed today.

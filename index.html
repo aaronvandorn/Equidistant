@@ -45,6 +45,14 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .btn{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 12px;cursor:pointer;letter-spacing:.06em;font-weight:500}
 .btn:hover{border-color:var(--muted)}
 .btn.primary{background:var(--oxide);border-color:var(--oxide-hi);color:var(--on-accent);font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.btn[aria-expanded="true"]{border-color:var(--amber);color:var(--amber)}
+.share{display:flex;flex-direction:column;gap:10px;margin:4px 16px 18px;padding:14px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px}
+.share-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px}
+.share-what{font-size:14px;color:var(--muted)}
+.share-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.share-url{flex:1 1 260px;min-width:0;font-size:13px}
+.share-text{width:100%;resize:vertical;font-size:13px;line-height:1.45;color:var(--ink)}
+.share-status{font-size:14px;color:var(--teal)}
 
 main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
 
@@ -133,6 +141,7 @@ main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
 <header class="top">
   <div class="wrap">
     <div class="brand"><h1>Equidistant</h1><small>as far back as it is forward</small></div>
+    <button class="btn" id="shareBtn" type="button" aria-expanded="false" aria-controls="sharePanel">Share</button>
     <button class="btn" id="themeBtn" type="button" aria-label="Switch to light theme">☀ Light</button>
   </div>
 </header>
@@ -167,6 +176,22 @@ main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
       <div class="ro today"><span class="lbl"><span class="dot" style="background:var(--amber)"></span><span id="todayLbl">Today</span></span><div class="lcd" id="roToday" data-key="Today"></div><div class="ro-foot"><span class="dow" id="dowToday"></span><button type="button" class="linkbtn" id="resetToday" hidden>Back to real today</button></div></div>
     </div>
     <p class="edit-note">Click any month, day or year above and type to change it. Press Enter or click away to update. Changing the mirror moves the picked date to the halfway point.</p>
+    <div class="share" id="sharePanel" hidden>
+      <div class="share-head">
+        <span class="lbl">Share this combination</span>
+        <span class="share-what" id="shareWhat"></span>
+      </div>
+      <div class="share-row">
+        <input class="inp share-url" id="shareUrl" type="text" readonly aria-label="Link to this combination">
+        <button class="btn primary" type="button" id="copyLink">Copy link</button>
+      </div>
+      <textarea class="inp share-text" id="shareText" rows="6" readonly aria-label="Summary to paste"></textarea>
+      <div class="share-row">
+        <button class="btn" type="button" id="copyText">Copy summary</button>
+        <button class="btn" type="button" id="nativeShare" hidden>Share…</button>
+        <span class="share-status" id="shareStatus" role="status"></span>
+      </div>
+    </div>
     <div class="tape" id="tape" aria-hidden="true"></div>
   </section>
 
@@ -480,11 +505,12 @@ async function fillSide(cells, side, d, id){
   const done = (k, fn) => { if (id !== runId) return; const c = cells[k + ':' + side]; resetCell(c, tag); fn(c); };
   for (const cat of ['song', 'film', 'tv']){
     CATS.find(x => x.id === cat).fn(d)
+      .then(r => { if (id === runId){ results[side][cat] = r; refreshShare(); } return r; })
       .then(r => done(cat, c => renderChart(c, r, cat, d)))
       .catch(() => done(cat, failCell));
   }
   getEvents(d)
-    .then(r => { done('events', c => renderEvents(c, r, d)); done('births', c => renderBirths(c, r)); })
+    .then(r => { if (id === runId){ results[side].events = r; refreshShare(); } done('events', c => renderEvents(c, r, d)); done('births', c => renderBirths(c, r)); })
     .catch(() => { done('events', failCell); done('births', failCell); });
 }
 
@@ -592,6 +618,65 @@ function commit(k){
 ['#roMirror', '#roPicked', '#roToday'].forEach(s => buildLcd($(s)));
 $('#resetToday').addEventListener('click', () => { refToday = null; if (last) run(last.picked); });
 
+/* ---- sharing ---- */
+let results = { mirror:{}, picked:{} };
+function shareLink(){
+  if (!last) return location.href;
+  const u = new URL(location.href);
+  u.hash = '';
+  u.search = '?date=' + iso(last.picked) + (refToday ? '&today=' + iso(last.today) : '');
+  return u.toString();
+}
+function shareSummary(){
+  if (!last) return '';
+  const { mirror, picked, today } = last, days = Math.round((today - picked) / DAY).toLocaleString('en-US');
+  const yM = mirror.getUTCFullYear(), yP = picked.getUTCFullYear();
+  const lines = [fmtLong(picked) + ' sits exactly ' + days + ' days between ' + fmtLong(mirror) + ' and ' + fmtLong(today) + (refToday ? '' : ' (today)') + '.', ''];
+  const pair = (label, fmt) => {
+    const a = results.mirror[label], b = results.picked[label];
+    if (!a && !b) return;
+    lines.push(({ song:'No. 1 song', film:'No. 1 film', tv:'Top TV show' })[label] + ':');
+    lines.push('  ' + yM + ': ' + (a ? fmt(a) : '—'));
+    lines.push('  ' + yP + ': ' + (b ? fmt(b) : '—'));
+  };
+  pair('song', r => '“' + r.title + '”' + (r.artist ? ' by ' + r.artist : ''));
+  pair('film', r => r.title);
+  pair('tv', r => r.title + (r.network ? ' (' + r.network + ')' : ''));
+  const ev = side => { const e = results[side].events; return e && e.exact[0] ? e.exact[0].text : null; };
+  if (ev('mirror') || ev('picked')){
+    lines.push('That day:');
+    if (ev('mirror')) lines.push('  ' + yM + ': ' + ev('mirror'));
+    if (ev('picked')) lines.push('  ' + yP + ': ' + ev('picked'));
+  }
+  lines.push('', shareLink());
+  return lines.join('\n');
+}
+function refreshShare(){
+  if ($('#sharePanel').hidden || !last) return;
+  $('#shareUrl').value = shareLink();
+  $('#shareText').value = shareSummary();
+  $('#shareWhat').textContent = fmtShort(last.mirror) + ' · ' + fmtShort(last.picked) + ' · ' + fmtShort(last.today);
+}
+function flash(msg){ const s = $('#shareStatus'); s.textContent = msg; clearTimeout(flash.t); flash.t = setTimeout(() => { s.textContent = ''; }, 2500); }
+async function copyFrom(field, okMsg){
+  try { await navigator.clipboard.writeText(field.value); flash(okMsg); }
+  catch (e) { field.focus(); field.select(); flash('Selected. Press Ctrl+C (or ⌘C) to copy.'); }
+}
+$('#shareBtn').addEventListener('click', () => {
+  const p = $('#sharePanel'), open = p.hidden;
+  p.hidden = !open;
+  $('#shareBtn').setAttribute('aria-expanded', String(open));
+  if (open){ refreshShare(); p.scrollIntoView({ block:'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }
+});
+$('#copyLink').addEventListener('click', () => copyFrom($('#shareUrl'), 'Link copied.'));
+$('#copyText').addEventListener('click', () => copyFrom($('#shareText'), 'Summary copied.'));
+if (navigator.share){
+  const ns = $('#nativeShare'); ns.hidden = false;
+  ns.addEventListener('click', () => {
+    navigator.share({ title: 'Equidistant', text: shareSummary().replace(/\n+https?:\S+$/, ''), url: shareLink() }).catch(() => {});
+  });
+}
+
 function run(picked, note){
   const today = getToday();
   const hint = $('#hint');
@@ -615,9 +700,11 @@ function run(picked, note){
   $('#headPicked').innerHTML = ''; $('#headPicked').append('Picked date', el('small', null, fmtLong(picked)));
   drawTape(mirror, today);
   const id = ++runId;
+  results = { mirror:{}, picked:{} };
   fillSide(cells, 'mirror', mirror, id);
   fillSide(cells, 'picked', picked, id);
   try { const u = new URL(location.href); u.search = '?date=' + iso(picked) + (refToday ? '&today=' + iso(refToday) : ''); history.replaceState(null, '', u); } catch (e) {}
+  refreshShare();
   return true;
 }
 

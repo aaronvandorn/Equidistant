@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Equidistant</title>
+<meta name="description" content="Pick a date, and find the date that sits just as far before it as today sits after it — with the #1 song, #1 film, top TV show and events from Wikipedia.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Barlow+Condensed:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: console top bar → control deck with three date readouts on a tape-like timeline → category rows comparing the mirror date and the picked date side by side. */
+:root{
+  --bg:#161814; --panel:#21241e; --panel-2:#2a2e26; --well:#10120e; --line:#3a3f34;
+  --ink:#ece5d3; --muted:#9c9d89; --oxide:#a8562f; --oxide-hi:#dc8a50; --amber:#f2b648;
+  --teal:#80c7b5; --alert:#e5553f; --on-accent:#ece5d3; --grid-faint:rgba(58,63,52,.45);
+  --shadow:rgba(0,0,0,.5);
+  --display:'Big Shoulders Display','Arial Narrow',Impact,sans-serif;
+  --ui:'Barlow Condensed','Arial Narrow','Roboto Condensed',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+  color-scheme:dark;
+}
+/* Light colorway shared with Logic-Rhythm */
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#eef2f6;--panel:#ffffff;--panel-2:#e7edf3;--well:#dde3ea;--line:#c4ccd6;--ink:#1f2733;--muted:#64707f;--oxide:#3b76b3;--oxide-hi:#2f69a6;--amber:#3b76b3;--teal:#157f78;--alert:#c0392b;--on-accent:#ffffff;--grid-faint:rgba(196,204,214,.7);--shadow:rgba(30,41,59,.18);color-scheme:light}}
+:root[data-theme="light"]{--bg:#eef2f6;--panel:#ffffff;--panel-2:#e7edf3;--well:#dde3ea;--line:#c4ccd6;--ink:#1f2733;--muted:#64707f;--oxide:#3b76b3;--oxide-hi:#2f69a6;--amber:#3b76b3;--teal:#157f78;--alert:#c0392b;--on-accent:#ffffff;--grid-faint:rgba(196,204,214,.7);--shadow:rgba(30,41,59,.18);color-scheme:light}
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);font-size:16px;line-height:1.4}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+a{color:inherit;text-decoration-color:var(--line);text-underline-offset:3px}
+a:hover{text-decoration-color:var(--oxide-hi)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:21;background:var(--bg)}
+.top .wrap{display:flex;align-items:center;gap:12px;padding-block:10px}
+.brand{margin-right:auto}
+.brand h1{font-family:var(--display);font-weight:800;font-size:26px;letter-spacing:.06em;text-transform:uppercase;margin:0;line-height:1}
+.brand small{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.btn{background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:7px 12px;cursor:pointer;letter-spacing:.06em;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--oxide);border-color:var(--oxide-hi);color:var(--on-accent);font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+
+main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
+
+/* control deck */
+.deck{background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px -16px var(--shadow);overflow:hidden}
+.controls{display:flex;flex-wrap:wrap;align-items:end;gap:14px 18px;padding:16px;border-bottom:1px solid var(--line)}
+.field{display:flex;flex-direction:column;gap:5px}
+.lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.seg{display:flex;gap:2px;background:var(--well);border:1px solid var(--line);border-radius:6px;padding:3px}
+.seg button{background:none;border:0;padding:6px 14px;border-radius:4px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--panel-2);color:var(--ink)}
+.inp{background:var(--well);border:1px solid var(--line);border-radius:5px;padding:7px 10px;font-family:var(--mono);font-size:15px;color:var(--amber);min-width:0}
+#yearIn{width:8ch}
+.hint{font-size:14px;color:var(--muted);flex:1 1 220px;min-width:0;align-self:center}
+.err{color:var(--alert)}
+
+.readouts{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;gap:0;padding:18px 16px 6px}
+.ro{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ro .lbl{display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.ro.mirror .dot{background:var(--teal)}
+.ro.picked .dot{background:var(--oxide-hi)}
+.lcd{background:var(--well);border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-family:var(--mono);font-size:clamp(15px,2.2vw,22px);color:var(--amber);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dow{font-size:13px;color:var(--muted);letter-spacing:.06em}
+.gap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 10px 0;color:var(--muted);text-align:center;min-width:0}
+.gap b{font-family:var(--mono);font-weight:500;font-size:14px;color:var(--ink)}
+.gap span{font-size:12px;letter-spacing:.06em}
+
+/* tape timeline */
+.tape{position:relative;margin:14px 16px 22px;height:46px}
+.tape .bar{position:absolute;left:0;right:0;top:12px;height:10px;border-radius:5px;background:linear-gradient(90deg,var(--teal),var(--oxide-hi) 50%,var(--amber));opacity:.35}
+.tape .tick{position:absolute;top:8px;width:1px;height:18px;background:var(--line)}
+.tape .tlab{position:absolute;top:28px;transform:translateX(-50%);font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.tape .mk{position:absolute;top:4px;width:4px;height:26px;margin-left:-2px;border-radius:2px;background:var(--muted)}
+.tape .mk.m{background:var(--teal)} .tape .mk.p{background:var(--oxide-hi)} .tape .mk.t{background:var(--amber)}
+
+/* comparison */
+.colheads,.row{display:grid;grid-template-columns:150px minmax(0,1fr) minmax(0,1fr);gap:12px}
+.colheads{position:sticky;top:calc(env(safe-area-inset-top,0px) + 57px);z-index:5;background:var(--bg);padding-block:8px;border-bottom:1px solid var(--line)}
+.colhead{font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.04em;text-transform:uppercase;line-height:1.05;min-width:0}
+.colhead small{display:block;font-family:var(--ui);font-weight:500;font-size:12px;letter-spacing:.14em;color:var(--muted)}
+.colhead.mirror{color:var(--teal)} .colhead.picked{color:var(--oxide-hi)}
+.rows{display:flex;flex-direction:column;gap:12px}
+.cat{padding-top:12px}
+.cat h2{font-family:var(--display);font-weight:800;font-size:19px;letter-spacing:.06em;text-transform:uppercase;margin:0;line-height:1.1}
+.cat p{margin:4px 0 0;font-size:13px;color:var(--muted);line-height:1.3}
+.cell{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;min-width:0;min-height:74px}
+.cell .tag{display:none;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;margin-bottom:4px}
+.cell.mirror .tag{color:var(--teal)} .cell.picked .tag{color:var(--oxide-hi)}
+.hit{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:.02em;line-height:1.1;text-wrap:balance}
+.sub{font-size:15px;color:var(--ink);margin-top:3px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:6px}
+.none{color:var(--muted);font-size:15px}
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.list li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;font-size:15px;line-height:1.35}
+.list .d{font-family:var(--mono);font-size:11px;color:var(--amber);padding-top:3px;white-space:nowrap}
+.list .near .d{color:var(--muted)}
+.loading{display:flex;flex-direction:column;gap:7px}
+.loading i{display:block;height:12px;border-radius:3px;background:var(--panel-2);animation:pulse 1.2s ease-in-out infinite}
+.loading i:nth-child(2){width:70%} .loading i:nth-child(3){width:45%}
+@keyframes pulse{50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.loading i{animation:none}}
+.foot{font-size:13px;color:var(--muted);max-width:70ch}
+
+@media (max-width:760px){
+  .readouts{grid-template-columns:1fr;gap:4px}
+  .gap{flex-direction:row;gap:8px;padding:2px 0}
+  .colheads{display:none}
+  .row{grid-template-columns:1fr;gap:8px}
+  .cell .tag{display:block}
+  .cat{padding-top:8px}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><h1>Equidistant</h1><small>as far back as it is forward</small></div>
+    <button class="btn" id="themeBtn" type="button" aria-label="Switch to light theme">☀ Light</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="deck" aria-label="Pick a date">
+    <form class="controls" id="form" novalidate>
+      <div class="field">
+        <span class="lbl" id="modeLbl">Pick by</span>
+        <div class="seg" role="group" aria-labelledby="modeLbl">
+          <button type="button" id="modeYear" aria-pressed="true">Year</button>
+          <button type="button" id="modeDate" aria-pressed="false">Exact date</button>
+        </div>
+      </div>
+      <div class="field" id="yearField">
+        <label class="lbl" for="yearIn">Year</label>
+        <input class="inp" id="yearIn" type="number" inputmode="numeric" min="1100" step="1" value="2000">
+      </div>
+      <div class="field" id="dateField" hidden>
+        <label class="lbl" for="dateIn">Date</label>
+        <input class="inp" id="dateIn" type="date">
+      </div>
+      <button class="btn primary" type="submit" id="go">Mirror it</button>
+      <p class="hint" id="hint">Year mode uses today's month and day in that year.</p>
+    </form>
+
+    <div class="readouts" aria-live="polite">
+      <div class="ro mirror"><span class="lbl"><span class="dot"></span>Mirror date</span><div class="lcd" id="roMirror">—</div><span class="dow" id="dowMirror"></span></div>
+      <div class="gap"><b id="gapA">—</b><span>days</span></div>
+      <div class="ro picked"><span class="lbl"><span class="dot"></span>Picked date</span><div class="lcd" id="roPicked">—</div><span class="dow" id="dowPicked"></span></div>
+      <div class="gap"><b id="gapB">—</b><span>days</span></div>
+      <div class="ro today"><span class="lbl"><span class="dot" style="background:var(--amber)"></span>Today</span><div class="lcd" id="roToday">—</div><span class="dow" id="dowToday"></span></div>
+    </div>
+    <div class="tape" id="tape" aria-hidden="true"></div>
+  </section>
+
+  <section aria-label="What was happening">
+    <div class="colheads">
+      <div></div>
+      <div class="colhead mirror" id="headMirror">Mirror date<small>—</small></div>
+      <div class="colhead picked" id="headPicked">Picked date<small>—</small></div>
+    </div>
+    <div class="rows" id="rows"></div>
+  </section>
+
+  <p class="foot">Everything below the dates is read live from English Wikipedia: the Billboard Hot 100 number-one lists, the U.S. weekend box office number-one lists, the season's top-rated U.S. network TV programs, the year's article, and the "On this day" feed. Charts are U.S.-based and start around 1958 (songs), 1977 (films) and 1950 (TV), so older dates show events only.</p>
+</main>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MON_RX = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?';
+const monIndex = s => MONTHS.findIndex(m => m.slice(0,3).toLowerCase() === s.slice(0,3).toLowerCase());
+const WIKI = 'https://en.wikipedia.org';
+
+/* ================= theme ================= */
+const lightQuery = matchMedia('(prefers-color-scheme: light)');
+const effectiveTheme = () => document.documentElement.dataset.theme || (lightQuery.matches ? 'light' : 'dark');
+function onThemeChange(){
+  const light = effectiveTheme() === 'light', b = $('#themeBtn');
+  b.textContent = light ? '☾ Dark' : '☀ Light';
+  b.setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+}
+$('#themeBtn').addEventListener('click', () => {
+  const next = effectiveTheme() === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('eq-theme', next); } catch (e) {}
+});
+try { const th = localStorage.getItem('eq-theme'); if (th === 'light' || th === 'dark') document.documentElement.dataset.theme = th; } catch (e) {}
+new MutationObserver(onThemeChange).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+lightQuery.addEventListener('change', onThemeChange);
+onThemeChange();
+
+/* ================= date math (all UTC, day precision) ================= */
+const DAY = 86400000;
+function mkDate(y, m, d){ const t = new Date(Date.UTC(2000, 0, 1)); t.setUTCFullYear(y, m, d); return t; }
+function todayUTC(){ const n = new Date(); return mkDate(n.getFullYear(), n.getMonth(), n.getDate()); }
+const isLeap = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+function sameDayInYear(y, today){
+  let m = today.getUTCMonth(), d = today.getUTCDate();
+  if (m === 1 && d === 29 && !isLeap(y)) d = 28;
+  return mkDate(y, m, d);
+}
+function mirrorOf(picked, today){
+  const diff = Math.round((today - picked) / DAY);
+  return { diff, mirror: new Date(picked.getTime() - diff * DAY) };
+}
+function iso(d){ return String(d.getUTCFullYear()).padStart(4,'0') + '-' + String(d.getUTCMonth()+1).padStart(2,'0') + '-' + String(d.getUTCDate()).padStart(2,'0'); }
+function parseISO(s){ const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? mkDate(+m[1], +m[2]-1, +m[3]) : null; }
+function fmtLong(d){ return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear(); }
+function fmtShort(d){ return MONTHS[d.getUTCMonth()].slice(0,3) + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear(); }
+function fmtDow(d){ return d.toLocaleDateString('en-US', { weekday:'long', timeZone:'UTC' }); }
+function ymd(a, b){ // calendar span a→b (a<=b)
+  let y = b.getUTCFullYear() - a.getUTCFullYear(), m = b.getUTCMonth() - a.getUTCMonth(), d = b.getUTCDate() - a.getUTCDate();
+  if (d < 0){ m--; d += new Date(Date.UTC(2000, b.getUTCMonth(), 0)).getUTCDate(); }
+  if (m < 0){ y--; m += 12; }
+  return [y && y + (y === 1 ? ' year' : ' years'), m && m + (m === 1 ? ' month' : ' months'), d && d + (d === 1 ? ' day' : ' days')].filter(Boolean).join(', ') || 'same day';
+}
+
+/* ================= Wikipedia access ================= */
+const cache = new Map();
+function getJSON(url){
+  if (!cache.has(url)) cache.set(url, fetch(url).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).catch(e => { cache.delete(url); throw e; }));
+  return cache.get(url);
+}
+async function parsePage(title, prop){
+  const url = WIKI + '/w/api.php?action=parse&format=json&formatversion=2&redirects=1&origin=*&prop=' + prop + '&page=' + encodeURIComponent(title);
+  const j = await getJSON(url);
+  if (j.error) return null;           // page missing
+  return j.parse;
+}
+async function pageDoc(title){
+  const p = await parsePage(title, 'text');
+  if (!p) return null;
+  return { doc: new DOMParser().parseFromString(p.text, 'text/html'), title: p.title };
+}
+const wikiUrl = t => WIKI + '/wiki/' + encodeURIComponent(t.replace(/ /g, '_'));
+const clean = s => s.replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').replace(/^[\s"“”‘’']+|[\s"“”‘’'†‡*§¶♦#]+$/g, '').trim();
+
+/* table → grid with rowspan/colspan expanded */
+function tableGrid(table){
+  const rows = [...table.rows], grid = rows.map(() => []);
+  rows.forEach((row, r) => {
+    let c = 0;
+    for (const cell of row.cells){
+      while (grid[r][c]) c++;
+      const rs = Math.max(1, cell.rowSpan || 1), cs = Math.max(1, cell.colSpan || 1);
+      for (let i = 0; i < rs && r + i < rows.length; i++) for (let j = 0; j < cs; j++) grid[r+i][c+j] = cell;
+      c += cs;
+    }
+  });
+  const hi = rows.findIndex(row => row.cells.length && [...row.cells].every(c => c.tagName === 'TH'));
+  if (hi < 0) return null;
+  const header = grid[hi].map(c => clean(c.textContent).toLowerCase());
+  const data = [];
+  for (let r = hi + 1; r < rows.length; r++){
+    if (![...rows[r].cells].some(c => c.tagName === 'TD')) continue;
+    data.push(grid[r]);
+  }
+  return { header, data };
+}
+function findCol(header, rx, not){ return header.findIndex(h => rx.test(h) && !(not && not.test(h))); }
+function cellDate(cell, year){
+  if (!cell) return null;
+  const m = new RegExp(MON_RX + '\\s+(\\d{1,2})', 'i').exec(clean(cell.textContent));
+  if (!m) return null;
+  const mi = monIndex(m[1]); if (mi < 0) return null;
+  return mkDate(year, mi, +m[2]);
+}
+function cellLink(cell){
+  const a = cell && [...cell.querySelectorAll('a[href^="/wiki/"]')].find(a => !/^\/wiki\/(File|Help|Template|Wikipedia):/.test(a.getAttribute('href')));
+  return a ? WIKI + a.getAttribute('href') : null;
+}
+/* Find the chart row in effect on `target` from a dated chart list. */
+async function chartAsOf(titleFor, target, cols){
+  const y = target.getUTCFullYear();
+  for (const year of [y, y - 1]){
+    const page = await pageDoc(titleFor(year));
+    if (!page) { if (year === y) continue; break; }
+    let best = null;
+    for (const t of page.doc.querySelectorAll('table.wikitable')){
+      const g = tableGrid(t); if (!g) continue;
+      const di = findCol(g.header, cols.date), ti = findCol(g.header, cols.title, cols.titleNot), ai = cols.artist ? findCol(g.header, cols.artist) : -1;
+      if (di < 0 || ti < 0) continue;
+      for (const row of g.data){
+        const d = cellDate(row[di], year);
+        if (!d || (year === y && d > target)) continue;
+        if (!best || d >= best.date) best = { date:d, title:clean(row[ti].textContent), link:cellLink(row[ti]), artist: ai >= 0 && row[ai] ? clean(row[ai].textContent) : '' };
+      }
+      if (best) break;
+    }
+    if (best) return { ...best, source: page.title };
+    if (year === y && !page) continue;
+  }
+  return null;
+}
+const getSong = d => chartAsOf(y => 'List of Billboard Hot 100 number ones of ' + y, d,
+  { date:/date|week/, title:/song|single|title/, titleNot:/date/, artist:/artist/ });
+const getFilm = d => chartAsOf(y => 'List of ' + y + ' box office number-one films in the United States', d,
+  { date:/date|weekend/, title:/film|title|movie/, titleNot:/date/ });
+
+function seasonOf(d){ const y = d.getUTCFullYear(); return d.getUTCMonth() >= 8 ? y : y - 1; }
+function seasonLabel(s){ const e = s + 1; return s + '–' + (Math.floor(e / 100) !== Math.floor(s / 100) ? String(e) : String(e % 100).padStart(2, '0')); }
+async function getTV(d){
+  const s = seasonOf(d), label = seasonLabel(s);
+  const page = await pageDoc('Top-rated United States television programs of ' + label);
+  if (!page) return null;
+  for (const t of page.doc.querySelectorAll('table.wikitable')){
+    const g = tableGrid(t); if (!g || !g.data.length) continue;
+    const pi = findCol(g.header, /program|show|series|title/), ni = findCol(g.header, /network/);
+    if (pi < 0) continue;
+    const row = g.data[0];
+    return { title: clean(row[pi].textContent), link: cellLink(row[pi]), network: ni >= 0 && row[ni] ? clean(row[ni].textContent) : '', season: label, source: page.title };
+  }
+  return null;
+}
+
+/* ---- wikitext → plain text ---- */
+function templateText(tpl){
+  const inner = tpl.slice(2, -2), parts = inner.split('|').map(s => s.trim()), name = parts[0].toLowerCase();
+  const pos = parts.slice(1).filter(p => !/^[\w ]+=/.test(p));
+  if (/^(nowrap|nobr|small|big|sic|lang-\w+|nbsp|abbr|nihongo|transl|ill|interlanguage link|w|flagu|flagcountry|flag|flagdeco|ship|usd|us\$)$/.test(name)) {
+    if (name === 'nbsp') return ' ';
+    if (name === 'usd' || name === 'us$') return '$' + (pos[0] || '');
+    if (name === 'ship') return pos.slice(0, 2).join(' ');
+    return pos[0] || '';
+  }
+  if (name === 'lang') return pos[1] || '';
+  if (/^(snd|ndash|spaced ndash|–)$/.test(name)) return ' – ';
+  if (/^(mdash|spaced mdash)$/.test(name)) return ' — ';
+  if (name === 'convert' || name === 'cvt') return pos.slice(0, 2).join(' ');
+  return '';
+}
+function stripWiki(s){
+  s = s.replace(/<!--[\s\S]*?-->/g, '').replace(/<ref[^>]*\/>/gi, '').replace(/<ref[^>]*>[\s\S]*?<\/ref>/gi, '');
+  let prev; do { prev = s; s = s.replace(/\{\{[^{}]*\}\}/g, templateText); } while (s !== prev);
+  s = s.replace(/\[\[(?:File|Image):[^\]]*\]\]/gi, '')
+       .replace(/\[\[(?:[^|\]]*\|)?([^\]]+)\]\]/g, '$1')
+       .replace(/\[https?:\/\/\S+\s([^\]]+)\]/g, '$1').replace(/\[https?:\/\/\S+\]/g, '')
+       .replace(/'{2,}/g, '').replace(/<[^>]+>/g, '')
+       .replace(/&nbsp;/g, ' ').replace(/&ndash;/g, '–').replace(/&mdash;/g, '—').replace(/&amp;/g, '&');
+  return s.replace(/\s+/g, ' ').trim();
+}
+/* Dated events from a year article's Events section. */
+function yearEvents(wikitext, year){
+  let txt = wikitext;
+  const st = /^==\s*Events\s*==\s*$/m.exec(txt);
+  if (st){ txt = txt.slice(st.index + st[0].length); const en = /^==[^=].*==\s*$/m.exec(txt); if (en) txt = txt.slice(0, en.index); }
+  const out = [], head = new RegExp('^' + MON_RX + '\\s+(\\d{1,2})(?:\\s*[–-]\\s*(?:' + MON_RX + '\\s+)?(\\d{1,2}))?\\s*(?:[–—:-]\\s*([\\s\\S]*))?$', 'i');
+  let cur = null;
+  for (const line of txt.split('\n')){
+    const m = /^(\*+)\s*(.*)$/.exec(line); if (!m) continue;
+    const depth = m[1].length, body = stripWiki(m[2]); if (!body) continue;
+    if (depth === 1){
+      const dm = head.exec(body);
+      if (dm){
+        const mi = monIndex(dm[1]); const mi2 = dm[3] ? monIndex(dm[3]) : mi;
+        cur = { from: mkDate(year, mi, +dm[2]), to: mkDate(year, mi2, dm[4] ? +dm[4] : +dm[2]) };
+        if (dm[5] && dm[5].trim()) out.push({ ...cur, text: dm[5].trim() });
+      } else cur = null;
+    } else if (cur) out.push({ ...cur, text: body });
+  }
+  return out;
+}
+async function getEvents(d){
+  const y = d.getUTCFullYear(), mm = String(d.getUTCMonth()+1).padStart(2,'0'), dd = String(d.getUTCDate()).padStart(2,'0');
+  const [otd, yp] = await Promise.allSettled([
+    getJSON(WIKI + '/api/rest_v1/feed/onthisday/all/' + mm + '/' + dd),
+    parsePage(String(y), 'wikitext')
+  ]);
+  if (otd.status === 'rejected' && yp.status === 'rejected') throw otd.reason;
+  const exact = [], births = [], seen = new Set();
+  const add = (list, text, link) => { const k = text.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 36); if (seen.has(k)) return; seen.add(k); list.push({ text, link }); };
+  if (otd.status === 'fulfilled'){
+    const v = otd.value, pick = arr => (arr || []).filter(e => e.year === y);
+    for (const e of [...pick(v.selected), ...pick(v.events)]) add(exact, e.text, e.pages && e.pages[0] && e.pages[0].content_urls ? e.pages[0].content_urls.desktop.page : null);
+    for (const e of pick(v.births)) add(births, e.text, e.pages && e.pages[0] && e.pages[0].content_urls ? e.pages[0].content_urls.desktop.page : null);
+  }
+  let near = [];
+  if (yp.status === 'fulfilled' && yp.value){
+    const evs = yearEvents(yp.value.wikitext, y);
+    for (const e of evs) if (e.from <= d && d <= e.to) add(exact, e.text, null);
+    if (exact.length < 3){
+      near = evs.filter(e => !(e.from <= d && d <= e.to))
+        .map(e => ({ ...e, dist: Math.abs(e.from - d) / DAY })).filter(e => e.dist <= 10)
+        .sort((a, b) => a.dist - b.dist).slice(0, 5 - exact.length)
+        .sort((a, b) => a.from - b.from);
+    }
+  }
+  return { exact: exact.slice(0, 6), near, births: births.slice(0, 5), yearUrl: wikiUrl(String(y)) };
+}
+
+/* ================= rendering ================= */
+const CATS = [
+  { id:'song', name:'No. 1 song', note:'Billboard Hot 100, chart week in effect', fn:getSong },
+  { id:'film', name:'No. 1 film', note:'U.S. weekend box office', fn:getFilm },
+  { id:'tv', name:'Top TV show', note:'Highest-rated U.S. network program of the season', fn:getTV },
+  { id:'events', name:'Events', note:'What happened that day', fn:getEvents },
+  { id:'births', name:'Born that day', note:'Notable people', fn:null }
+];
+function el(tag, cls, text){ const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function linked(text, href, cls){ const n = el(href ? 'a' : 'span', cls, text); if (href){ n.href = href; n.target = '_blank'; n.rel = 'noopener'; } return n; }
+function loadingInto(c){ const l = el('div', 'loading'); l.append(el('i'), el('i'), el('i')); c.append(l); }
+
+function buildRows(){
+  const rows = $('#rows'); rows.textContent = '';
+  const cells = {};
+  for (const cat of CATS){
+    const row = el('div', 'row');
+    const h = el('div', 'cat'); h.append(el('h2', null, cat.name), el('p', null, cat.note));
+    row.append(h);
+    for (const side of ['mirror', 'picked']){
+      const c = el('div', 'cell ' + side);
+      const tag = el('div', 'tag'); c.append(tag);
+      c.dataset.k = cat.id + ':' + side;
+      cells[cat.id + ':' + side] = c;
+      row.append(c);
+    }
+    rows.append(row);
+  }
+  return cells;
+}
+function resetCell(c, tagText){ c.textContent = ''; const t = el('div', 'tag', tagText); c.append(t); }
+
+function renderChart(c, r, kind, d){
+  if (!r){
+    const msg = kind === 'song' ? 'No Hot 100 list on Wikipedia for ' + d.getUTCFullYear() + '. The chart began in August 1958.'
+              : kind === 'film' ? 'No weekend box office list on Wikipedia for ' + d.getUTCFullYear() + '.'
+              : 'No ratings list on Wikipedia for the ' + seasonLabel(seasonOf(d)) + ' season.';
+    c.append(el('div', 'none', msg)); return;
+  }
+  c.append(linked(kind === 'song' ? '“' + r.title + '”' : r.title, r.link, 'hit'));
+  if (kind === 'song' && r.artist) c.append(el('div', 'sub', r.artist));
+  if (kind === 'tv' && r.network) c.append(el('div', 'sub', r.network));
+  const meta = el('div', 'meta');
+  meta.append(kind === 'tv' ? r.season + ' season · ' : (kind === 'song' ? 'Chart dated ' : 'Weekend ending ') + fmtShort(r.date) + ' · ');
+  meta.append(linked('source', wikiUrl(r.source)));
+  c.append(meta);
+}
+function renderEvents(c, r, d){
+  if (!r.exact.length && !r.near.length){
+    c.append(el('div', 'none', 'Wikipedia lists nothing for this date. '), linked('Browse ' + d.getUTCFullYear() + ' →', r.yearUrl));
+    return;
+  }
+  const ul = el('ul', 'list');
+  for (const e of r.exact){ const li = el('li'); li.append(el('span', 'd', 'THIS DAY'), linked(e.text, e.link)); ul.append(li); }
+  for (const e of r.near){ const li = el('li', 'near'); li.append(el('span', 'd', MONTHS[e.from.getUTCMonth()].slice(0,3).toUpperCase() + ' ' + e.from.getUTCDate()), el('span', null, e.text)); ul.append(li); }
+  c.append(ul);
+  const meta = el('div', 'meta'); meta.append(linked('More from ' + d.getUTCFullYear() + ' →', r.yearUrl)); c.append(meta);
+}
+function renderBirths(c, r){
+  if (!r.births.length){ c.append(el('div', 'none', 'No notable births listed for this exact date.')); return; }
+  const ul = el('ul', 'list');
+  for (const b of r.births){ const li = el('li'); li.append(el('span', 'd', '★'), linked(b.text, b.link)); ul.append(li); }
+  c.append(ul);
+}
+function failCell(c){ c.append(el('div', 'none err', 'Couldn’t reach Wikipedia. Check your connection and press Mirror it again.')); }
+
+let runId = 0;
+async function fillSide(cells, side, d, id){
+  const tag = (side === 'mirror' ? 'Mirror · ' : 'Picked · ') + fmtShort(d);
+  for (const cat of CATS){ const c = cells[cat.id + ':' + side]; resetCell(c, tag); loadingInto(c); }
+  const done = (k, fn) => { if (id !== runId) return; const c = cells[k + ':' + side]; resetCell(c, tag); fn(c); };
+  for (const cat of ['song', 'film', 'tv']){
+    CATS.find(x => x.id === cat).fn(d)
+      .then(r => done(cat, c => renderChart(c, r, cat, d)))
+      .catch(() => done(cat, failCell));
+  }
+  getEvents(d)
+    .then(r => { done('events', c => renderEvents(c, r, d)); done('births', c => renderBirths(c, r)); })
+    .catch(() => { done('events', failCell); done('births', failCell); });
+}
+
+function drawTape(mirror, today){
+  const tape = $('#tape'); tape.textContent = '';
+  tape.append(el('div', 'bar'));
+  const t0 = mirror.getTime(), t1 = today.getTime(), span = t1 - t0;
+  const y0 = mirror.getUTCFullYear(), y1 = today.getUTCFullYear(), years = Math.max(1, y1 - y0);
+  const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500].find(s => years / s <= 9) || 1000;
+  const narrow = innerWidth < 520;
+  if (span > 0) for (let y = Math.ceil((y0 + 1) / step) * step; y <= y1; y += step){
+    const f = (mkDate(y, 0, 1).getTime() - t0) / span; if (f <= 0.02 || f >= 0.98) continue;
+    const tk = el('div', 'tick'); tk.style.left = (f * 100) + '%'; tape.append(tk);
+    if (!narrow || (y / step) % 2 === 0){ const lb = el('div', 'tlab', String(y)); lb.style.left = (f * 100) + '%'; tape.append(lb); }
+  }
+  [['m', 0], ['p', 50], ['t', 100]].forEach(([k, p]) => { const mk = el('div', 'mk ' + k); mk.style.left = p + '%'; tape.append(mk); });
+}
+
+let cells = buildRows();
+let mode = 'year';
+function setMode(m){
+  mode = m;
+  $('#modeYear').setAttribute('aria-pressed', m === 'year');
+  $('#modeDate').setAttribute('aria-pressed', m === 'date');
+  $('#yearField').hidden = m !== 'year';
+  $('#dateField').hidden = m !== 'date';
+  $('#hint').className = 'hint';
+  $('#hint').textContent = m === 'year' ? "Year mode uses today's month and day in that year." : 'Pick any date before today.';
+}
+$('#modeYear').addEventListener('click', () => setMode('year'));
+$('#modeDate').addEventListener('click', () => setMode('date'));
+
+function run(picked){
+  const today = todayUTC();
+  const hint = $('#hint');
+  if (!picked){ hint.className = 'hint err'; hint.textContent = mode === 'year' ? 'Enter a four-digit year.' : 'Choose a date.'; return; }
+  if (picked >= today){ hint.className = 'hint err'; hint.textContent = 'Pick a date before today so the mirror lands in the past.'; return; }
+  const { diff, mirror } = mirrorOf(picked, today);
+  if (mirror.getUTCFullYear() < 1){ hint.className = 'hint err'; hint.textContent = 'That mirror would land before year 1. Pick something after ' + Math.ceil((today.getUTCFullYear() + 1) / 2) + '.'; return; }
+  hint.className = 'hint';
+  hint.textContent = 'Both gaps are exactly ' + diff.toLocaleString('en-US') + ' days (about ' + ymd(picked, today) + ').' +
+    (mirror.getUTCDate() !== picked.getUTCDate() || mirror.getUTCMonth() !== picked.getUTCMonth() ? ' Leap days shift the mirror off the calendar date.' : '');
+  $('#roMirror').textContent = fmtLong(mirror); $('#dowMirror').textContent = fmtDow(mirror);
+  $('#roPicked').textContent = fmtLong(picked); $('#dowPicked').textContent = fmtDow(picked);
+  $('#roToday').textContent = fmtLong(today); $('#dowToday').textContent = fmtDow(today);
+  $('#gapA').textContent = diff.toLocaleString('en-US'); $('#gapB').textContent = diff.toLocaleString('en-US');
+  $('#headMirror').innerHTML = ''; $('#headMirror').append('Mirror date', el('small', null, fmtLong(mirror)));
+  $('#headPicked').innerHTML = ''; $('#headPicked').append('Picked date', el('small', null, fmtLong(picked)));
+  drawTape(mirror, today);
+  const id = ++runId;
+  fillSide(cells, 'mirror', mirror, id);
+  fillSide(cells, 'picked', picked, id);
+  try { const u = new URL(location.href); u.search = '?date=' + iso(picked); history.replaceState(null, '', u); } catch (e) {}
+}
+
+$('#form').addEventListener('submit', e => {
+  e.preventDefault();
+  const today = todayUTC();
+  let picked = null;
+  if (mode === 'year'){ const y = parseInt($('#yearIn').value, 10); if (Number.isFinite(y)) picked = sameDayInYear(y, today); }
+  else picked = parseISO($('#dateIn').value);
+  run(picked);
+});
+
+(function init(){
+  const today = todayUTC();
+  $('#dateIn').max = iso(new Date(today.getTime() - DAY));
+  $('#yearIn').max = today.getUTCFullYear() - 1;
+  $('#yearIn').min = Math.ceil((today.getUTCFullYear() + 1) / 2);
+  const q = new URLSearchParams(location.search);
+  let picked = parseISO(q.get('date'));
+  if (picked && (picked.getUTCMonth() !== today.getUTCMonth() || picked.getUTCDate() !== today.getUTCDate())){
+    setMode('date'); $('#dateIn').value = iso(picked);
+  } else {
+    const y = picked ? picked.getUTCFullYear() : parseInt(q.get('year') || '2000', 10);
+    $('#yearIn').value = y; picked = sameDayInYear(y, today);
+    $('#dateIn').value = iso(picked);
+  }
+  run(picked);
+})();
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { const m = parseISO(new URLSearchParams(location.search).get('date')); if (m) drawTape(mirrorOf(m, todayUTC()).mirror, todayUTC()); }, 150); });
+</script>
+</body>
+</html>

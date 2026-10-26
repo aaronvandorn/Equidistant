@@ -67,7 +67,17 @@ main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .ro.mirror .dot{background:var(--teal)}
 .ro.picked .dot{background:var(--oxide-hi)}
-.lcd{background:var(--well);border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-family:var(--mono);font-size:clamp(15px,2.2vw,22px);color:var(--amber);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lcd{display:flex;align-items:baseline;flex-wrap:nowrap;gap:.1em;background:var(--well);border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-family:var(--mono);font-size:clamp(15px,2.1vw,21px);color:var(--amber);letter-spacing:.02em;white-space:nowrap;overflow:hidden;cursor:text}
+.lcd:focus-within{border-color:var(--amber)}
+.lcd input{background:transparent;border:0;border-bottom:1px dashed var(--line);border-radius:0;padding:0 0 1px;margin:0;color:var(--amber);font:inherit;letter-spacing:inherit;min-width:0;text-align:left}
+.lcd input:hover{border-bottom-color:var(--muted)}
+.lcd input:focus{outline:none;border-bottom:1px solid var(--amber);background:color-mix(in srgb,var(--amber) 10%,transparent)}
+.lcd input.bad{border-bottom-color:var(--alert);color:var(--alert)}
+.lcd .comma{margin-right:.45em}
+.lcd .seg-m{margin-right:.45em}
+.ro-foot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;min-height:20px}
+.linkbtn{background:none;border:0;padding:0;font-size:13px;color:var(--teal);letter-spacing:.04em;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.edit-note{font-size:13px;color:var(--muted);padding:0 16px 4px;margin:0}
 .dow{font-size:13px;color:var(--muted);letter-spacing:.06em}
 .gap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 10px 0;color:var(--muted);text-align:center;min-width:0}
 .gap b{font-family:var(--mono);font-weight:500;font-size:14px;color:var(--ink)}
@@ -150,12 +160,13 @@ main{padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
     </form>
 
     <div class="readouts" aria-live="polite">
-      <div class="ro mirror"><span class="lbl"><span class="dot"></span>Mirror date</span><div class="lcd" id="roMirror">—</div><span class="dow" id="dowMirror"></span></div>
+      <div class="ro mirror"><span class="lbl"><span class="dot"></span>Mirror date</span><div class="lcd" id="roMirror" data-key="Mirror"></div><div class="ro-foot"><span class="dow" id="dowMirror"></span></div></div>
       <div class="gap"><b id="gapA">—</b><span>days</span></div>
-      <div class="ro picked"><span class="lbl"><span class="dot"></span>Picked date</span><div class="lcd" id="roPicked">—</div><span class="dow" id="dowPicked"></span></div>
+      <div class="ro picked"><span class="lbl"><span class="dot"></span>Picked date</span><div class="lcd" id="roPicked" data-key="Picked"></div><div class="ro-foot"><span class="dow" id="dowPicked"></span></div></div>
       <div class="gap"><b id="gapB">—</b><span>days</span></div>
-      <div class="ro today"><span class="lbl"><span class="dot" style="background:var(--amber)"></span>Today</span><div class="lcd" id="roToday">—</div><span class="dow" id="dowToday"></span></div>
+      <div class="ro today"><span class="lbl"><span class="dot" style="background:var(--amber)"></span><span id="todayLbl">Today</span></span><div class="lcd" id="roToday" data-key="Today"></div><div class="ro-foot"><span class="dow" id="dowToday"></span><button type="button" class="linkbtn" id="resetToday" hidden>Back to real today</button></div></div>
     </div>
+    <p class="edit-note">Click any month, day or year above and type to change it. Press Enter or click away to update. Changing the mirror moves the picked date to the halfway point.</p>
     <div class="tape" id="tape" aria-hidden="true"></div>
   </section>
 
@@ -506,19 +517,99 @@ function setMode(m){
 $('#modeYear').addEventListener('click', () => setMode('year'));
 $('#modeDate').addEventListener('click', () => setMode('date'));
 
-function run(picked){
-  const today = todayUTC();
+/* ---- editable date readouts ---- */
+let refToday = null;          // null = the real today
+let last = null;              // last good { mirror, picked, today }
+const getToday = () => refToday || todayUTC();
+
+function buildLcd(box){
+  const k = box.dataset.key;
+  const m = el('input', 'seg-m'); m.type = 'text'; m.id = 'm' + k; m.autocomplete = 'off'; m.spellcheck = false; m.setAttribute('aria-label', k + ' month');
+  const d = el('input', 'seg-d'); d.type = 'text'; d.id = 'd' + k; d.inputMode = 'numeric'; d.autocomplete = 'off'; d.setAttribute('aria-label', k + ' day');
+  const y = el('input', 'seg-y'); y.type = 'text'; y.id = 'y' + k; y.inputMode = 'numeric'; y.autocomplete = 'off'; y.setAttribute('aria-label', k + ' year');
+  box.append(m, d, el('span', 'comma', ','), y);
+  box.addEventListener('click', e => { if (e.target === box) y.focus(); });
+  for (const inp of [m, d, y]){
+    inp.addEventListener('input', () => { inp.classList.remove('bad'); fit(inp); });
+    inp.addEventListener('focus', () => inp.select());
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter'){ e.preventDefault(); commit(k); inp.blur(); }
+      else if (e.key === 'Escape'){ e.preventDefault(); showLast(); inp.blur(); }
+      else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && inp !== m){
+        e.preventDefault();
+        const n = parseInt(inp.value, 10);
+        if (Number.isFinite(n)){ inp.value = n + (e.key === 'ArrowUp' ? 1 : -1); fit(inp); }
+      }
+    });
+    inp.addEventListener('change', () => commit(k));
+  }
+}
+function fit(inp){ inp.style.width = Math.max(inp.classList.contains('seg-m') ? 3 : 1, inp.value.length) + 0.3 + 'ch'; }
+function setLcd(k, date){
+  const v = [MONTHS[date.getUTCMonth()], String(date.getUTCDate()), String(date.getUTCFullYear())];
+  ['m', 'd', 'y'].forEach((p, i) => { const inp = $('#' + p + k); inp.value = v[i]; inp.classList.remove('bad'); fit(inp); });
+  $('#dow' + k).textContent = fmtDow(date);
+}
+function monthFrom(s){
+  s = s.trim();
+  if (/^\d{1,2}$/.test(s)){ const n = +s; return n >= 1 && n <= 12 ? n - 1 : -1; }
+  if (s.length < 3) return -1;
+  return MONTHS.findIndex(m => m.toLowerCase().startsWith(s.toLowerCase().replace(/\.$/, '')));
+}
+function readLcd(k){
+  const mi = $('#m' + k), di = $('#d' + k), yi = $('#y' + k);
+  const m = monthFrom(mi.value), d = parseInt(di.value, 10), y = parseInt(yi.value, 10);
+  let ok = true;
+  if (m < 0){ mi.classList.add('bad'); ok = false; }
+  if (!/^\d{1,4}$/.test(yi.value.trim()) || y < 1){ yi.classList.add('bad'); ok = false; }
+  if (!ok) return { error: m < 0 ? 'Type a month name (like Oct) or a number from 1 to 12.' : 'Type a year from 1 to 9999.' };
+  const dim = new Date(Date.UTC(2000, m + 1, 0)).getUTCDate() + (m === 1 && !isLeap(y) ? -1 : 0);
+  if (!/^\d{1,2}$/.test(di.value.trim()) || d < 1 || d > dim){ di.classList.add('bad'); return { error: MONTHS[m] + ' ' + y + ' has days 1 to ' + dim + '.' }; }
+  return { date: mkDate(y, m, d) };
+}
+function showLast(){ if (last){ setLcd('Mirror', last.mirror); setLcd('Picked', last.picked); setLcd('Today', last.today); } }
+function editError(msg){ const h = $('#hint'); h.className = 'hint err'; h.textContent = msg; }
+function commit(k){
+  const r = readLcd(k);
+  if (r.error){ editError(r.error); return; }
+  const d = r.date;
+  if (k === 'Picked'){
+    if (last && +d === +last.picked) return;
+    run(d);
+  } else if (k === 'Mirror'){
+    if (last && +d === +last.mirror) return;
+    const t = getToday();
+    if (d >= t){ editError('The mirror date has to be before today.'); showLast(); return; }
+    const total = Math.round((t - d) / DAY), half = Math.round(total / 2);
+    run(new Date(d.getTime() + half * DAY), total % 2 ? 'There are ' + total.toLocaleString('en-US') + ' days between your mirror date and today, an odd number, so the picked date is rounded to the nearest day and the mirror moved by one.' : '');
+  } else {
+    if (last && +d === +last.today) return;
+    const prev = refToday;
+    refToday = +d === +todayUTC() ? null : d;
+    if (!run(last ? last.picked : d)) { refToday = prev; showLast(); }
+  }
+}
+['#roMirror', '#roPicked', '#roToday'].forEach(s => buildLcd($(s)));
+$('#resetToday').addEventListener('click', () => { refToday = null; if (last) run(last.picked); });
+
+function run(picked, note){
+  const today = getToday();
   const hint = $('#hint');
-  if (!picked){ hint.className = 'hint err'; hint.textContent = mode === 'year' ? 'Enter a four-digit year.' : 'Choose a date.'; return; }
-  if (picked >= today){ hint.className = 'hint err'; hint.textContent = 'Pick a date before today so the mirror lands in the past.'; return; }
+  const fail = msg => { hint.className = 'hint err'; hint.textContent = msg; showLast(); return false; };
+  if (!picked) return fail(mode === 'year' ? 'Enter a four-digit year.' : 'Choose a date.');
+  if (picked >= today) return fail('Pick a date before ' + (refToday ? 'your today date' : 'today') + ' so the mirror lands in the past.');
   const { diff, mirror } = mirrorOf(picked, today);
-  if (mirror.getUTCFullYear() < 1){ hint.className = 'hint err'; hint.textContent = 'That mirror would land before year 1. Pick something after ' + Math.ceil((today.getUTCFullYear() + 1) / 2) + '.'; return; }
+  if (mirror.getUTCFullYear() < 1) return fail('That mirror would land before year 1. Pick something after ' + Math.ceil((today.getUTCFullYear() + 1) / 2) + '.');
   hint.className = 'hint';
-  hint.textContent = 'Both gaps are exactly ' + diff.toLocaleString('en-US') + ' days (about ' + ymd(picked, today) + ').' +
-    (mirror.getUTCDate() !== picked.getUTCDate() || mirror.getUTCMonth() !== picked.getUTCMonth() ? ' Leap days shift the mirror off the calendar date.' : '');
-  $('#roMirror').textContent = fmtLong(mirror); $('#dowMirror').textContent = fmtDow(mirror);
-  $('#roPicked').textContent = fmtLong(picked); $('#dowPicked').textContent = fmtDow(picked);
-  $('#roToday').textContent = fmtLong(today); $('#dowToday').textContent = fmtDow(today);
+  hint.textContent = note || ('Both gaps are exactly ' + diff.toLocaleString('en-US') + ' days (about ' + ymd(picked, today) + ').' +
+    (mirror.getUTCDate() !== picked.getUTCDate() || mirror.getUTCMonth() !== picked.getUTCMonth() ? ' Leap days shift the mirror off the calendar date.' : ''));
+  last = { mirror, picked, today };
+  setLcd('Mirror', mirror); setLcd('Picked', picked); setLcd('Today', today);
+  $('#todayLbl').textContent = refToday ? 'Today (changed)' : 'Today';
+  $('#resetToday').hidden = !refToday;
+  $('#yearIn').value = picked.getUTCFullYear(); $('#dateIn').value = iso(picked);
+  $('#dateIn').max = iso(new Date(today.getTime() - DAY));
+  $('#yearIn').max = today.getUTCFullYear() - 1;
   $('#gapA').textContent = diff.toLocaleString('en-US'); $('#gapB').textContent = diff.toLocaleString('en-US');
   $('#headMirror').innerHTML = ''; $('#headMirror').append('Mirror date', el('small', null, fmtLong(mirror)));
   $('#headPicked').innerHTML = ''; $('#headPicked').append('Picked date', el('small', null, fmtLong(picked)));
@@ -526,12 +617,13 @@ function run(picked){
   const id = ++runId;
   fillSide(cells, 'mirror', mirror, id);
   fillSide(cells, 'picked', picked, id);
-  try { const u = new URL(location.href); u.search = '?date=' + iso(picked); history.replaceState(null, '', u); } catch (e) {}
+  try { const u = new URL(location.href); u.search = '?date=' + iso(picked) + (refToday ? '&today=' + iso(refToday) : ''); history.replaceState(null, '', u); } catch (e) {}
+  return true;
 }
 
 $('#form').addEventListener('submit', e => {
   e.preventDefault();
-  const today = todayUTC();
+  const today = getToday();
   let picked = null;
   if (mode === 'year'){ const y = parseInt($('#yearIn').value, 10); if (Number.isFinite(y)) picked = sameDayInYear(y, today); }
   else picked = parseISO($('#dateIn').value);
@@ -539,11 +631,11 @@ $('#form').addEventListener('submit', e => {
 });
 
 (function init(){
-  const today = todayUTC();
-  $('#dateIn').max = iso(new Date(today.getTime() - DAY));
-  $('#yearIn').max = today.getUTCFullYear() - 1;
-  $('#yearIn').min = Math.ceil((today.getUTCFullYear() + 1) / 2);
   const q = new URLSearchParams(location.search);
+  const qt = parseISO(q.get('today'));
+  if (qt && +qt !== +todayUTC()) refToday = qt;
+  const today = getToday();
+  $('#yearIn').min = 1;
   let picked = parseISO(q.get('date'));
   if (picked && (picked.getUTCMonth() !== today.getUTCMonth() || picked.getUTCDate() !== today.getUTCDate())){
     setMode('date'); $('#dateIn').value = iso(picked);
@@ -554,7 +646,7 @@ $('#form').addEventListener('submit', e => {
   }
   run(picked);
 })();
-let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { const m = parseISO(new URLSearchParams(location.search).get('date')); if (m) drawTape(mirrorOf(m, todayUTC()).mirror, todayUTC()); }, 150); });
+let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (last) drawTape(last.mirror, last.today); }, 150); });
 </script>
 </body>
 </html>
